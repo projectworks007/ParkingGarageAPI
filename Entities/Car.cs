@@ -22,10 +22,11 @@ namespace ParkingGarageAPI.Entities
         [JsonPropertyName("year")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int Year { get; set; }
-        
+
         [Required]
         [JsonPropertyName("licensePlate")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [MaxLength(7)]
         public string LicensePlate { get; set; }
 
         // Kapcsolat a User entitással

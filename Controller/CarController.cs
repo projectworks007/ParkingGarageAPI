@@ -69,6 +69,9 @@ public class CarController : ControllerBase
             if (car == null)
                 return BadRequest("Car data is null");
                 
+            if (string.IsNullOrWhiteSpace(car.LicensePlate) || car.LicensePlate.Length > 7)
+                return BadRequest("License plate must be 1-7 characters long.");
+                
             var userEmail = User.FindFirstValue(ClaimTypes.Name);
             if (string.IsNullOrEmpty(userEmail))
                 return Unauthorized("User not authenticated.");
