@@ -9,9 +9,9 @@ services:
     healthCheckPath: /api/health  # Adj hozzá egy health check végpontot az API-hoz
     envVars:
       - key: MYSQL_HOST
-        value: mysql-parking-garage-api.aivencloud.com
+        value: mysql-508bf39-parking-garage-api.c.aivencloud.com
       - key: MYSQL_PORT
-        value: 17581
+        value: 21479
       - key: MYSQL_DATABASE
         value: ParkingGarageDB
       - key: MYSQL_USER
