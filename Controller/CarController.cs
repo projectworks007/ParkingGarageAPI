@@ -116,6 +116,80 @@ public class CarController : ControllerBase
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
+
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> UpdateCar(int id, [FromBody] UpdateCarRequest request)
+    {
+        return await UpdateCarInternal(id, request);
+    }
+
+    // Fallback endpoint: egyes környezetekben a PUT tiltott/proxyzott lehet.
+    [HttpPost("{id:int}/update")]
+    public async Task<IActionResult> UpdateCarPostFallback(int id, [FromBody] UpdateCarRequest request)
+    {
+        return await UpdateCarInternal(id, request);
+    }
+
+    private async Task<IActionResult> UpdateCarInternal(int id, UpdateCarRequest request)
+    {
+        try
+        {
+            if (request == null)
+                return BadRequest("Car data is null");
+
+            if (string.IsNullOrWhiteSpace(request.Brand) || string.IsNullOrWhiteSpace(request.Model))
+                return BadRequest("Brand and model are required.");
+
+            if (string.IsNullOrWhiteSpace(request.LicensePlate) || request.LicensePlate.Length > 7)
+                return BadRequest("License plate must be 1-7 characters long.");
+
+            var userEmail = User.FindFirstValue(ClaimTypes.Name);
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized("User not authenticated.");
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+            if (user == null)
+                return NotFound("User not found.");
+
+            Car car;
+            if (user.IsAdmin)
+            {
+                car = await _context.Cars.FirstOrDefaultAsync(c => c.Id == id);
+            }
+            else
+            {
+                car = await _context.Cars.FirstOrDefaultAsync(c => c.Id == id && c.UserId == user.Id);
+            }
+
+            if (car == null)
+                return NotFound("Car not found or you don't have permission to update it.");
+
+            car.Brand = request.Brand.Trim();
+            car.Model = request.Model.Trim();
+            car.Year = request.Year;
+            car.LicensePlate = request.LicensePlate.Trim().ToUpperInvariant();
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = "Car updated successfully.",
+                car = new
+                {
+                    car.Id,
+                    car.Brand,
+                    car.Model,
+                    car.Year,
+                    car.LicensePlate,
+                    car.IsParked
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
     
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteCar(int id)
@@ -217,3 +291,11 @@ public class CarController : ControllerBase
         }
     }
 } 
+
+public class UpdateCarRequest
+{
+    public string Brand { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public int Year { get; set; }
+    public string LicensePlate { get; set; } = string.Empty;
+}
