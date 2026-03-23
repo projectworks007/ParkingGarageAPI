@@ -128,12 +128,20 @@ public class ParkingController : ControllerBase
             if (user == null)
                 return NotFound("Felhasználó nem található");
             
-            // Autó keresése
-            var car = await _context.Cars
-                .FirstOrDefaultAsync(c => c.Id == request.CarId && c.UserId == user.Id);
+            // Autó keresése: admin bármelyik autót leállíthatja, normál user csak a sajátját.
+            var carQuery = _context.Cars
+                .Include(c => c.User)
+                .Where(c => c.Id == request.CarId);
+
+            if (!user.IsAdmin)
+            {
+                carQuery = carQuery.Where(c => c.UserId == user.Id);
+            }
+
+            var car = await carQuery.FirstOrDefaultAsync();
                 
             if (car == null)
-                return NotFound($"Az autó (ID: {request.CarId}) nem található vagy nem a tiéd");
+                return NotFound($"Az autó (ID: {request.CarId}) nem található vagy nincs jogosultságod hozzá");
             
             // Ellenőrizzük a parkolási állapotot
             if (!car.IsParked)
@@ -171,6 +179,7 @@ public class ParkingController : ControllerBase
             parkingFee = Math.Ceiling(parkingFee / 10) * 10;
             
             // Parkolási adatok mentése a történeti táblába
+            var historyOwner = car.User ?? user;
             var history = new ParkingHistory
             {
                 StartTime = parkingSpot.StartTime.Value,
@@ -182,9 +191,9 @@ public class ParkingController : ControllerBase
                 CarBrand = car.Brand,
                 CarModel = car.Model,
                 LicensePlate = car.LicensePlate,
-                UserId = user.Id,
-                UserName = $"{user.FirstName} {user.LastName}",
-                UserEmail = user.Email
+                UserId = historyOwner.Id,
+                UserName = $"{historyOwner.FirstName} {historyOwner.LastName}",
+                UserEmail = historyOwner.Email
             };
             
             // Mentés előtt frissítsük a kapcsolódó entitások állapotát
@@ -236,8 +245,21 @@ public class ParkingController : ControllerBase
             }
             catch (Exception ex)
             {
+                // A parkolás lezárása már sikeresen megtörtént és mentve lett.
+                // Itt csak a számla/email folyamat hibázott, ezért ne dobjunk 500-at.
                 var innerException = ex.InnerException != null ? ex.InnerException.Message : "Nincs belső kivétel";
-                return StatusCode(500, $"Számla generálási hiba: {ex.Message}. Belső hiba: {innerException}");
+                Console.WriteLine($"Számla generálási hiba, de parkolás lezárva: {ex.Message}. Belső hiba: {innerException}");
+
+                return Ok(new
+                {
+                    message = "Parkolás befejezve, de a számla generálása sikertelen.",
+                    startTime = parkingSpot.StartTime,
+                    endTime = parkingSpot.EndTime,
+                    duration = $"{parkingDuration.Hours} óra {parkingDuration.Minutes} perc",
+                    fee = $"{parkingFee} Ft",
+                    rate = "600 Ft/óra",
+                    invoiceWarning = "A számla jelenleg nem elérhető."
+                });
             }
         }
         catch (Exception ex)

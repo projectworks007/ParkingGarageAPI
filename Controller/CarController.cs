@@ -118,7 +118,7 @@ public class CarController : ControllerBase
     }
     
     [HttpDelete("{id}")]
-    public IActionResult DeleteCar(int id)
+    public async Task<IActionResult> DeleteCar(int id)
     {
         try
         {
@@ -134,20 +134,52 @@ public class CarController : ControllerBase
             Car car;
             if (user.IsAdmin)
             {
-                car = _context.Cars.FirstOrDefault(c => c.Id == id);
+                car = await _context.Cars.FirstOrDefaultAsync(c => c.Id == id);
             }
             else
             {
-                car = _context.Cars.FirstOrDefault(c => c.Id == id && c.UserId == user.Id);
+                car = await _context.Cars.FirstOrDefaultAsync(c => c.Id == id && c.UserId == user.Id);
             }
             
             if (car == null)
                 return NotFound("Car not found or you don't have permission to delete it.");
-            
-            _context.Cars.Remove(car);
-            _context.SaveChanges();
+
+            // Normál felhasználó ne tudjon aktív parkolás alatt törölni.
+            if (!user.IsAdmin && car.IsParked)
+                return BadRequest("Parkoló autó nem törölhető. Előbb állítsd le a parkolást.");
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                // Admin törléskor az aktív parkolás felszabadítása kötelező.
+                if (user.IsAdmin && car.IsParked)
+                {
+                    var parkingSpot = await _context.ParkingSpots
+                        .FirstOrDefaultAsync(p => p.CarId == car.Id);
+
+                    if (parkingSpot == null)
+                    {
+                        throw new InvalidOperationException("Nem található aktív parkolóhely az autóhoz, ezért a törlés megszakadt.");
+                    }
+
+                    parkingSpot.IsOccupied = false;
+                    parkingSpot.CarId = null;
+                    parkingSpot.EndTime = DateTime.Now;
+                    car.IsParked = false;
+                }
+
+                _context.Cars.Remove(car);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+            });
             
             return Ok("Car deleted successfully.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
