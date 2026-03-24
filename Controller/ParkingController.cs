@@ -220,18 +220,9 @@ public class ParkingController : ControllerBase
                 // Számla generálása
                 var invoice = await _invoiceService.CreateInvoiceAsync(history);
                 
-                // Email küldése (aszinkron módon a háttérben, nem várjuk meg a befejezését)
-                _ = Task.Run(async () => 
-                {
-                    try
-                    {
-                        await _invoiceService.SendInvoiceByEmailAsync(invoice);
-                    }
-                    catch (Exception emailEx)
-                    {
-                        Console.WriteLine($"Email küldési hiba: {emailEx.Message}");
-                    }
-                });
+                // Email küldése megbízhatóan a kérés életciklusán belül.
+                // Így nem használunk felszabaduló scoped service-eket háttér Task-ban.
+                bool emailSent = await _invoiceService.SendInvoiceByEmailAsync(invoice);
                 
                 return Ok(new {
                     message = "Parkolás befejezve",
@@ -240,7 +231,9 @@ public class ParkingController : ControllerBase
                     duration = $"{parkingDuration.Hours} óra {parkingDuration.Minutes} perc",
                     fee = $"{parkingFee} Ft",
                     rate = "600 Ft/óra",
-                    invoiceNumber = invoice.InvoiceNumber
+                    invoiceNumber = invoice.InvoiceNumber,
+                    emailSent,
+                    emailWarning = emailSent ? null : "A számla elkészült, de az email küldése sikertelen."
                 });
             }
             catch (Exception ex)

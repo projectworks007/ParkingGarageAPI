@@ -81,7 +81,13 @@ namespace ParkingGarageAPI.Services
         
         public async Task<bool> SendInvoiceEmailAsync(string to, string subject, string body, string invoicePdfPath)
         {
-            // Speciális email küldés a számlákhoz
+            // Számlához kötelező a PDF csatolmány; ha hiányzik, ne küldjünk félkész emailt.
+            if (string.IsNullOrWhiteSpace(invoicePdfPath) || !File.Exists(invoicePdfPath))
+            {
+                Console.WriteLine($"Számla email küldés megszakítva: hiányzó PDF csatolmány. Path: {invoicePdfPath}");
+                return false;
+            }
+
             return await SendEmailAsync(to, subject, body, invoicePdfPath);
         }
     }
